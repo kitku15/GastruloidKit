@@ -2,17 +2,18 @@ import pandas as pd
 import numpy as np
 import os
 from scipy.interpolate import make_interp_spline
-from f_modelDetection import load_allowed_ids, load_boxes
+from GastruloidKit.src.GastruloidPy.gastruloid_detection import load_allowed_ids, load_boxes
 from PIL import Image
 import matplotlib.pyplot as plt
+from f_visualizechannels import overlay_channels
 
 
-def score_gastruloid_similarity(directory, repeat, marker, condition):
+def score_gastruloid_similarity(directory, repeat, marker, condition, num_bins):
 
-    meta_individual = f"{directory}/{repeat}/intensities/meta_individual_{condition}.csv"
-    meta_intensities = f"{directory}/meta_intensities.csv"
+    meta_individual = f"{directory}/{repeat}/intensities/{num_bins}_meta_individual_{condition}.csv"
+    meta_intensities = f'{directory}/{num_bins}_meta_intensities.csv'
 
-    output_csv_path=f'{directory}/{repeat}/{condition}_overlap_scores_{marker}.csv'
+    output_csv_path=f'{directory}/{repeat}/{condition}_overlap_scores_{marker}_{num_bins}bins.csv'
 
     # Load data
     interest_df = pd.read_csv(meta_individual) # contains intensity measurements for each individual gastruloid
@@ -34,20 +35,22 @@ def score_gastruloid_similarity(directory, repeat, marker, condition):
         print("No ND6 individual data found for given marker.")
         return
 
-    # Regions and x positions
-    regions = ['inner', 'mid', 'outer']  # or outer, mid, inner — just match your plotting logic
-    x = np.arange(len(regions))
+    # Get all bin columns dynamically (those starting with 'bin_')
+    bin_cols = [col for col in wt_df.columns if col.startswith('bin_')]
+
+    # Regions (x positions) will just be the bin indices
+    x = np.arange(len(bin_cols))
     x_smooth = np.linspace(x.min(), x.max(), 300)
 
     # Compute WT average curve
-    wt_means = wt_df[regions].mean().values.astype(float)
+    wt_means = wt_df[bin_cols].mean().values.astype(float)
     spline_wt = make_interp_spline(x, wt_means, k=2)
     wt_smooth = spline_wt(x_smooth)
 
     # Compute scores for each ND6 gastruloid
     results = []
     for _, row in interest_df.iterrows():
-        nd6_vals = row[regions].values.astype(float)
+        nd6_vals = row[bin_cols].values.astype(float)
         spline_nd6 = make_interp_spline(x, nd6_vals, k=2)
         nd6_smooth = spline_nd6(x_smooth)
 
@@ -62,7 +65,7 @@ def score_gastruloid_similarity(directory, repeat, marker, condition):
 
         results.append({
             'ID': row['ID'],
-            'marker': marker.upper(),
+            'marker': row['marker'].upper(),
             'overlap_score': overlap_percentage
         })
 
@@ -86,23 +89,24 @@ def sort_overlap_scores(input_csv, output_csv=None):
         print(f"Sorted CSV saved to {output_csv}")
     return df_sorted
 
-def score_gastruloid(directory, repeats, markers, conditions):
+def score_gastruloid(directory, repeats, markers, conditions, num_bins):
     for repeat in repeats:
         for marker in markers:
             for condition in conditions:
                 if marker != "DAPI": # filter out dapi
-                    results, output_csv_path = score_gastruloid_similarity(directory, repeat, marker, condition)
+                    results, output_csv_path = score_gastruloid_similarity(directory, repeat, marker, condition, num_bins)
                     results_sorted = results.sort_values(by='overlap_score', ascending=False)
                     results_sorted.to_csv(output_csv_path, index=False)
 
-def final_score_gastruloid(directory, repeats, conditions):
+def final_score_gastruloid(directory, repeats, conditions, num_bins):
 
     for repeat in repeats:
         for condition in conditions:
             # Paths to your CSVs
-            gata3_csv = f"{directory}/{repeat}/{condition}_overlap_scores_GATA3.csv"
-            sox2_csv = f"{directory}/{repeat}//{condition}_overlap_scores_SOX2.csv"
-            bra_csv = f"{directory}/{repeat}//{condition}_overlap_scores_BRA.csv"
+
+            gata3_csv = f"{directory}/{repeat}/{condition}_overlap_scores_GATA3_{num_bins}bins.csv"
+            sox2_csv = f"{directory}/{repeat}//{condition}_overlap_scores_SOX2_{num_bins}bins.csv"
+            bra_csv = f"{directory}/{repeat}//{condition}_overlap_scores_BRA_{num_bins}bins.csv"
 
             # Load and rename overlap_score columns
             gata3_df = pd.read_csv(gata3_csv)[['ID', 'overlap_score']].rename(columns={'overlap_score': 'GATA3_score'})
@@ -119,49 +123,13 @@ def final_score_gastruloid(directory, repeats, conditions):
             merged_df_sorted = merged_df.sort_values(by='final_score', ascending=False)
 
             # Save to CSV
-            save_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled.csv"
+            save_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled_{num_bins}bins.csv"
             merged_df_sorted.to_csv(save_path, index=False)
 
             print(f"Saved {save_path}")
 
-def hex_to_rgb01(hex_color):
-    hex_color = hex_color.lstrip('#')
-    r = int(hex_color[0:2], 16) / 255.0
-    g = int(hex_color[2:4], 16) / 255.0
-    b = int(hex_color[4:6], 16) / 255.0
-    return (r, g, b)
 
-def color_image(gray_img, color):
-    """Convert a grayscale image to an RGB image with a specific color."""
-    return np.stack([gray_img]*3, axis=-1) * color
 
-def overlay_channels(gata3_img_path, sox2_img_path, bra_img_path, colors=None):
-    if colors is None:
-        colors = {
-            'GATA3': "#FF00FF", 
-            'SOX2': "#00FFFF",  
-            'BRA': "#FFEE00"    
-        }
-
-    for key in colors:
-        if isinstance(colors[key], str):
-            colors[key] = hex_to_rgb01(colors[key])
-
-    # Load grayscale images
-    gata3 = np.array(Image.open(gata3_img_path).convert('L'), dtype=float)/255.0
-    sox2  = np.array(Image.open(sox2_img_path).convert('L'), dtype=float)/255.0
-    bra   = np.array(Image.open(bra_img_path).convert('L'), dtype=float)/255.0
-
-    # Create colored images
-    gata3_rgb = color_image(gata3, colors['GATA3'])
-    sox2_rgb  = color_image(sox2, colors['SOX2'])
-    bra_rgb   = color_image(bra, colors['BRA'])
-
-    # Merge: pixel-wise max
-    merge_rgb = np.maximum.reduce([gata3_rgb, sox2_rgb, bra_rgb])
-    merge_rgb = np.clip(merge_rgb, 0, 1)
-
-    return sox2_rgb, bra_rgb, gata3_rgb, merge_rgb
 
 def plot_top_ids(condition, csv_path, images_dir, output_dir, top_n=5, selection='top'):
     df = pd.read_csv(csv_path)
@@ -208,53 +176,39 @@ def plot_top_ids(condition, csv_path, images_dir, output_dir, top_n=5, selection
         plt.savefig(save_path)
         plt.close(fig)
 
-def channels_plot_any(ID, directory, repeat, condition):
 
-    images_dir = f"{directory}/{repeat}/boxes_tiff_selected"
-    output_dir = f"{directory}/{repeat}/plots"
-    
-    gata3_img_path = f"{images_dir}/img_GATA3_{condition}/{ID:.0f}.tiff"
-    sox2_img_path  = f"{images_dir}/img_SOX2_{condition}/{ID:.0f}.tiff"
-    bra_img_path   = f"{images_dir}/img_BRA_{condition}/{ID:.0f}.tiff"
-
-    sox2_rgb, bra_rgb, gata3_rgb, merge_rgb = overlay_channels(gata3_img_path, sox2_img_path, bra_img_path)
-
-    # Create a single figure with 4 panels in a row
-    fig, axes = plt.subplots(1, 4, figsize=(16, 4))
-    images = [sox2_rgb, bra_rgb, gata3_rgb, merge_rgb]
-    titles = ['SOX2', 'BRA', 'GATA3', 'Merge']
-
-    for ax, img, title in zip(axes, images, titles):
-        ax.imshow(img)
-        ax.set_title(title)
-        ax.axis('off')
-
-    plt.suptitle(f"ID: {ID}, {condition}, R: {repeat}")
-    plt.tight_layout()
-    plt.subplots_adjust(top=0.85)
-
-    save_path = os.path.join(output_dir, f"channelsplit_{int(ID)}_{condition}.png")
-    plt.savefig(save_path)
-    plt.close(fig)
-
-def plot_gastruloid_scoring(directory, repeats, selection, conditions):
+def plot_gastruloid_scoring(directory, repeats, selection, conditions, num_bins):
     for repeat in repeats:
         for condition in conditions:
-            csv_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled.csv"
+            csv_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled_{num_bins}bins.csv"
             images_dir = f"{directory}/{repeat}/boxes_tiff_selected"  # adjust to your actual image folder
             output_dir = f"{directory}/{repeat}/plots"
             plot_top_ids(condition, csv_path, images_dir, output_dir, top_n=5, selection=selection)
 
         
 
-def DAPIIntensity_vs_score_scatterplot(directory, repeats, conditions):
+def DAPIIntensity_vs_score_scatterplot(directory, repeats, conditions, num_bins, score="final"):
+    '''
+    The score argument lets you pick what type of score to plot along with DAPI Intensity. The options are:
+    - "final" (average between GATA3, SOX2, BRA). Its final on default. 
+    -  "GATA3": GATA3 Score
+    -  "SOX2": SOX2 Score
+    -  "BRA": BRA Score
+    '''
+
+    chosen_score = f"{score}_score" # either GATA3_score, SOX2_score, BRA_score, final_score
+
+    point_colors = {
+        "WT": "#FF93BC",
+        "ND6": "#819EFF"
+    }
 
     for repeat in repeats:
         for condition in conditions:
 
-            scores_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled.csv"
+            scores_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled_{num_bins}bins.csv"
             dapi_info_path = f"{directory}/{repeat}/distribution/{condition}_DAPI.csv"
-            save_path = f"{directory}/{repeat}/plots/DAPIIntensity_vs_score_scatterplot_{condition}_.png"
+            save_path = f"{directory}/{repeat}/plots/DAPIIntensity_vs_{score}score_scatterplot_{condition}_{num_bins}bins.png"
 
             # Load CSVs
             scores_df = pd.read_csv(scores_path)  
@@ -265,23 +219,24 @@ def DAPIIntensity_vs_score_scatterplot(directory, repeats, conditions):
 
             # Scatter plot
             plt.figure(figsize=(6,5))
-            plt.scatter(scores_df['final_score'], scores_df['DAPI_intensity'], color="#FF93BC", label='Data points')
+            plt.scatter(scores_df[chosen_score], scores_df['DAPI_intensity'], color = point_colors.get(condition), label='Data points')
 
             # Add trendline
-            z = np.polyfit(scores_df['final_score'], scores_df['DAPI_intensity'], 1)  # linear fit
+            z = np.polyfit(scores_df[chosen_score], scores_df['DAPI_intensity'], 1)  # linear fit
             p = np.poly1d(z)
-            plt.plot(scores_df['final_score'], p(scores_df['final_score']), color="#7B2296", linestyle='--', label=f'Trendline (slope={z[0]:.2f})')
+            plt.plot(scores_df[chosen_score], p(scores_df[chosen_score]), color="#7B2296", linestyle='--', label=f'Trendline (slope={z[0]:.2f})')
 
-            plt.xlabel("Score")
+            plt.xlabel(chosen_score)
+            plt.xlim(0, 100)
             plt.ylabel("DAPI Intensity")
-            plt.title(f"{condition} Final Score vs DAPI Intensity (R:{repeat})")
+            plt.title(f"{condition}, {score} score vs DAPI Intensity (R:{repeat})")
             plt.grid(True)
             plt.legend()
             plt.tight_layout()
             plt.savefig(save_path)
             plt.close()
 
-def DAPIIntensity_vs_score_scatterplot_combined(directory, repeats, conditions):
+def DAPIIntensity_vs_score_scatterplot_combined(directory, repeats, conditions, num_bins, score="final"):
     """
     Plots DAPI intensity vs final score for each repeat.
     - Multiple conditions shown with different point colors.
@@ -301,6 +256,8 @@ def DAPIIntensity_vs_score_scatterplot_combined(directory, repeats, conditions):
     }
 
     trendline_color="#7B2296"
+
+    chosen_score = f"{score}_score" # either GATA3_score, SOX2_score, BRA_score, final_score
     
     for repeat in repeats:
         plt.figure(figsize=(6,5))
@@ -309,7 +266,7 @@ def DAPIIntensity_vs_score_scatterplot_combined(directory, repeats, conditions):
         all_dapi = []
 
         for condition in conditions:
-            scores_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled.csv"
+            scores_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled_{num_bins}bins.csv"
             dapi_info_path = f"{directory}/{repeat}/distribution/{condition}_DAPI.csv"
 
             # Load CSVs
@@ -320,12 +277,12 @@ def DAPIIntensity_vs_score_scatterplot_combined(directory, repeats, conditions):
             scores_df['DAPI_intensity'] = scores_df['ID'].apply(lambda x: dapi_df.loc[x-1, 'intensity'])
 
             # Store for combined trendline
-            all_scores.extend(scores_df['final_score'])
+            all_scores.extend(scores_df[chosen_score])
             all_dapi.extend(scores_df['DAPI_intensity'])
 
             # Scatter plot for this condition
             plt.scatter(
-                scores_df['final_score'], 
+                scores_df[chosen_score], 
                 scores_df['DAPI_intensity'], 
                 color=point_colors.get(condition, None) if point_colors else None,
                 label=condition
@@ -344,14 +301,15 @@ def DAPIIntensity_vs_score_scatterplot_combined(directory, repeats, conditions):
             label=f"Combined trend (slope={z[0]:.2f})"
         )
 
-        plt.xlabel("Gastruloid Score")
+        plt.xlim(0, 100)
+        plt.xlabel(f"Gastruloid {score} Score")
         plt.ylabel("DAPI Intensity")
-        plt.title(f"Gastruloid Score vs DAPI Intensity (Repeat: {repeat})")
+        plt.title(f"Gastruloid {score} Score vs DAPI Intensity (Repeat: {repeat})")
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
 
-        save_path = f"{directory}/{repeat}/plots/DAPIIntensity_vs_score_scatterplot_combined.png"
+        save_path = f"{directory}/{repeat}/plots/DAPIIntensity_vs_{score}score_scatterplot_combined_{num_bins}bins.png"
         plt.savefig(save_path)
         plt.close()
 
@@ -384,23 +342,19 @@ def DAPI_average_intensity(directory, repeats, conditions):
     results_df.to_csv(output_file, index=False)
     print(f"Saved average intensities to {output_file}")
 
-# Example usage
-if __name__ == "__main__":
 
-
-    csv_path = "nd6_overlap_scores_compiled.csv"
-    images_dir = "CHIP_REPEATS_NEW/1/boxes_tiff_selected"  # adjust to your actual image folder
-    plot_top_ids(csv_path, images_dir, top_n=5, selection='top')
-
-
-def final_score_distribution(directory, repeats, conditions):
+def final_score_distribution(directory, repeats, conditions, num_bins, score='final'):
     # Define fixed bins from 0 to 100, step of 10
     bins = list(range(0, 101, 10))
 
+    chosen_score = f"{score}_score" # either GATA3_score, SOX2_score, BRA_score, final_score
+
+
     for repeat in repeats:
         for condition in conditions:
-            csv_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled.csv"
-            save_path = f"{directory}/{repeat}/plots/{condition}_reproducibility.png"
+            
+            csv_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled_{num_bins}bins.csv"
+            save_path = f"{directory}/{repeat}/plots/{condition}_{score}_reproducibility_{num_bins}bins.png"
 
             if not os.path.exists(csv_path):
                 print(f"Skipping missing file: {csv_path}")
@@ -408,12 +362,12 @@ def final_score_distribution(directory, repeats, conditions):
 
             df = pd.read_csv(csv_path)
 
-            bar_color = "#FF81CA"
+            colors_dict = { "BRA": "#FFEE00", "SOX2": "#00FFFF", "GATA3": "#FF00FF", "final": "#FF81CA"}  # custom colors
 
-            plt.hist(df['final_score'], bins=bins, color=bar_color, edgecolor='black')
-            plt.xlabel('Gastruloid Score')
+            plt.hist(df[chosen_score], bins=bins, color=colors_dict.get(score), edgecolor='black')
+            plt.xlabel(f'Gastruloid {score} Score')
             plt.ylabel('Frequency')
-            plt.title(f'Distribution of {condition} Gastruloid Scores (R: {repeat})')
+            plt.title(f'Distribution of {condition} Gastruloid {score} Scores (R: {repeat})')
 
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             plt.savefig(save_path)
@@ -421,17 +375,14 @@ def final_score_distribution(directory, repeats, conditions):
 
 
 
-import pandas as pd
-import matplotlib.pyplot as plt
-import os
-
-def final_score_distribution_combined(directory, repeats, conditions):
+def final_score_distribution_combined(directory, repeats, conditions, num_bins, score='final'):
     """
     Plots combined histograms for all repeats per condition.
     Histograms are plotted in ascending order of mean final_score so that
     lower scoring repeats appear in front.
     """
     bins = list(range(0, 101, 10))  # fixed bins 0-100
+    chosen_score = f"{score}_score" # either GATA3_score, SOX2_score, BRA_score, final_score
     colors = ["#FF81CA", "#6EC1E4", "#FFD700"]  # custom colors
 
     for condition in conditions:
@@ -440,12 +391,13 @@ def final_score_distribution_combined(directory, repeats, conditions):
         # Load all repeats into a list with their mean final_score
         repeat_data = []
         for repeat in repeats:
-            csv_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled.csv"
+            csv_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled_{num_bins}bins.csv"
+
             if not os.path.exists(csv_path):
                 print(f"Skipping missing file: {csv_path}")
                 continue
             df = pd.read_csv(csv_path)
-            mean_score = df['final_score'].mean()
+            mean_score = df[chosen_score].mean()
             repeat_data.append((mean_score, repeat, df))
 
         # Sort repeats by mean_score ascending (lowest first)
@@ -454,7 +406,7 @@ def final_score_distribution_combined(directory, repeats, conditions):
         # Plot each repeat histogram in order
         for i, (_, repeat, df) in enumerate(repeat_data):
             plt.hist(
-                df['final_score'],
+                df[chosen_score],
                 bins=bins,
                 alpha=0.4,
                 color=colors[i % len(colors)],
@@ -462,12 +414,65 @@ def final_score_distribution_combined(directory, repeats, conditions):
                 label=f"Repeat {repeat}"
             )
 
-        plt.xlabel('Gastruloid Score')
+        plt.xlabel(f'Gastruloid {score} Score')
         plt.ylabel('Frequency')
-        plt.title(f'Distribution of {condition} Gastruloid Scores (All Repeats)')
+        plt.title(f'Distribution of {condition} Gastruloid {score} Scores (All Repeats)')
         plt.legend()
 
-        save_path = f"{directory}/plots/{condition}_reproducibility_combined.png"
+        save_path = f"{directory}/plots/{condition}_{score}_reproducibility_{num_bins}bins_combined.png"
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path)
         plt.close()
+
+
+def final_score_distribution_markercombined(directory, repeats, conditions, chosen_markers, num_bins):
+    """
+    Plots combined histograms for all repeats per condition.
+    Histograms are plotted in ascending order of mean final_score so that
+    lower scoring repeats appear in front.
+    """
+    bins = list(range(0, 101, 10))  # fixed bins 0-100
+
+    colors_dict = { "BRA": "#FFEE00", "SOX2": "#00FFFF", "GATA3": "#FF00FF"}  # custom colors
+
+    for repeat in repeats:
+        for condition in conditions:
+            plt.figure(figsize=(8, 6))
+
+            # Load all repeats into a list with their mean final_score
+            marker_data = []
+            for marker in chosen_markers:
+                csv_path = f"{directory}/{repeat}/{condition}_overlap_scores_compiled_{num_bins}bins.csv"
+
+                if not os.path.exists(csv_path):
+                    print(f"Skipping missing file: {csv_path}")
+                    continue
+
+                df = pd.read_csv(csv_path)
+                chosen_score = f"{marker}_score"
+                mean_score = df[chosen_score].mean()
+                marker_data.append((mean_score, chosen_score, marker, df))
+
+            # Sort repeats by mean_score ascending (lowest first)
+            marker_data.sort(key=lambda x: x[0])
+
+            # Plot each repeat histogram in order
+            for i, (_, chosen_score, marker, df) in enumerate(marker_data):
+                plt.hist(
+                    df[chosen_score],
+                    bins=bins,
+                    alpha=0.4,
+                    color= colors_dict.get(marker),
+                    edgecolor='black',
+                    label=f"{marker}"
+                )
+
+            plt.xlabel(f'Gastruloid Markers Score')
+            plt.ylabel('Frequency')
+            plt.title(f'Distribution of {condition} Gastruloid Markers Scores (Repeat {repeat})')
+            plt.legend()
+
+            save_path = f"{directory}/{repeat}/plots/{condition}_markers_reproducibility_{num_bins}bins_combined.png"
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            plt.savefig(save_path)
+            plt.close()
