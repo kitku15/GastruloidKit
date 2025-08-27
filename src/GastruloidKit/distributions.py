@@ -293,7 +293,7 @@ def get_distributions(directory, repeats, conditions, markers):
 
         overlapdensity_plot()
 
-def get_DAPIcenter_distributions(directory, repeats, conditions, num_bins):
+def get_DAPIcenter_distributions(directory, repeats, conditions, num_bins, threshold=0.8):
     for repeat in repeats:
         for condition in conditions:
 
@@ -306,8 +306,6 @@ def get_DAPIcenter_distributions(directory, repeats, conditions, num_bins):
 
 
             results = []  # store ID + furthest_bin
-            threshold = 0.8
-
 
             for i in range(data.shape[0]):  # 252 rows
                 y = data[i, :]
@@ -371,7 +369,7 @@ def get_DAPIcenter_distributions(directory, repeats, conditions, num_bins):
                 edgecolor="black",
                 alpha=0.7
             )
-            plt.title(f"Distribution of Furthest Bin Below Threshold, Repeat {repeat}, Condition: {condition}")
+            plt.title(f"Distribution of Furthest Bin Below Threshold: {threshold}, Repeat {repeat}, Condition: {condition}")
             plt.xlabel("Furthest Bin")
             plt.xlim(1, 15)
             plt.ylabel("Percentage of Gastruloids (%)")
