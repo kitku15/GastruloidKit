@@ -150,7 +150,7 @@ Now you will open ImageJ and start manually making masks for each of marker in e
     │   ├── WT_SOX2_mask.tiff # example mask for SOX2
     │   ├── ND6_SOX2_mask.tiff
 ```
-Now all Images and Masks are aligned and the same size (7800 x 7800), we will split them into 676 boxes using a 26 x 26 grid. This process might take awhile and depend on how many channels and repeats you have. But you only have to run this process once as outputs are saved. 
+Now all Images and Masks are aligned and the same size (7800 x 7800), we will split them into 676 boxes using a 26 x 26 grid. This process might take awhile and depend on how many channels and repeats you have. As a reference, if you have 4 markers and 2 repeats it might take ~10 mins. But you only have to run this process once as outputs are saved. 
 ```python
 from GastruloidKit.f_modelDetection import grid_split
 

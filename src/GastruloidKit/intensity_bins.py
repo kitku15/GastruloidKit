@@ -166,7 +166,6 @@ def get_rawintensities(directory, repeats, conditions, markers, gastruloid_radiu
 
     print("Numbers of bins set:", num_bins)
     radiis = get_bin_radii(num_bins, gastruloid_radius)
-    print("Radius list:", radiis)
 
     for repeat in repeats:
         for condition in conditions:
@@ -334,32 +333,30 @@ def normalize_intensities(directory, repeats, conditions, markers, ref_marker, n
                     averaged_list = [sum(x)/len(x) for x in zip(*normalized_bin_means)]
                     # save to main meta 
                     print(f"saving to meta csv for {marker} for {len(averaged_list)} bins")
-                    print("should be bin len", len(averaged_list))
                     
                     meta_intensities_save(directory, repeat, condition, marker, averaged_list, num_bins)
 
                     # save to individual meta 
-                    for i in range(1, len(normalized_bin_means)+1):
-                        print("should be bin len", len(normalized_bin_means[i-1]))
-                        
+                    for i in range(1, len(normalized_bin_means)+1):                        
                         meta_intensities_save_individual(directory, i, repeat, condition, marker, normalized_bin_means[i-1], num_bins)
 
 def plot_gastruloidprofiles(directory, repeats, conditions, markers, ref_marker, num_bins, marker_colors):
 
     meta_path = f'{directory}/{num_bins}_meta_intensities.csv'
+    meta_df = pd.read_csv(meta_path)
 
     for repeat in repeats:
         save_dir = f'{directory}/{repeat}/plots/gastruloid_profiles'
         bins_plot(meta_path, repeat, marker_colors, plot_type='line', save_dir=save_dir)
         for condition in conditions:
-            plot_radial_bin_heatmap(meta_path, repeat, condition, marker_colors, save_dir)
+            plot_radial_bin_heatmap(meta_df, 1, repeat, condition, save_dir, 'average', marker_colors, meta=True)
 
 
     for repeat in repeats:
         save_dir = f'{directory}/{repeat}/plots/gastruloid_profiles'
         for marker in markers:
             if marker != ref_marker:
-                plot_marker_condition_overlap(meta_path, repeat, marker, save_dir=save_dir)
+                plot_marker_condition_overlap(meta_df, repeat, marker, save_dir=save_dir)
                 
 def white_to_color(color_name):
                 return LinearSegmentedColormap.from_list("", ["#FFFFFF00", color_name])
@@ -481,8 +478,6 @@ def DAPIintensity_split_profiles(directory, repeats, conditions, num_bins, marke
             )
 
             for bin_idx in [1,2,3,4,5]:
-                print(dapi_df.columns)
-                print(meta_indiv_df.columns)
                 avg_df, n_points = get_avg_df(dapi_df, "intensity_bin", [bin_idx], meta_indiv_df, id_col="ID")
                 make_profile_plot(avg_df, bin_idx, n_points, bin_categories, repeat, condition,
                                   save_dir, bin_label="DAPI", marker_colors=marker_colors)
@@ -534,8 +529,7 @@ def DAPIcenter_split_profiles(directory, repeats, conditions, num_bins, marker_c
 
 
 
-def plot_marker_condition_overlap(csv_path, repeat, marker, save_dir='plots'):
-    df = pd.read_csv(csv_path)
+def plot_marker_condition_overlap(df, repeat, marker, save_dir='plots'):
 
     # Remove DAPI
     df = df[df['marker'].str.upper() != 'DAPI']
@@ -621,10 +615,7 @@ def plot_marker_condition_overlap(csv_path, repeat, marker, save_dir='plots'):
     plt.close()
 
     print(f"Saved plot: {output_path}")
-    print(f"AUC WT: {auc_wt:.3f}")
-    print(f"AUC ND6: {auc_nd6:.3f}")
-    print(f"Overlap AUC: {auc_overlap:.3f}")
-    print(f"Overlap %: {overlap_percentage:.2f}%")
+
 
 
 def variance_of_laplacian(image):
@@ -720,6 +711,4 @@ def make_GATA3_filter(directory, repeats, conditions):
             masks_path = f"{mask_output_dir}/{condition}.npz"
             np.savez_compressed(masks_path, *masks)
             print(f"Saved GATA3 filter mask for Repeat: {repeat}, Condition: {condition}")
-
-            
-            print(f"Bluriness for this set is {bluriness_average}")
+            # print(f"Bluriness for this set is {bluriness_average}")

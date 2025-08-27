@@ -74,7 +74,6 @@ def get_binary_mask(area, sigma):
                 pass
         
         if best_slope_tol is None:
-            # print("No slope_tol found without border-touching regions")
             # fallback - smallest slope_tol's threshold
             best_threshold = find_curve_base_threshold(image, slope_tol=slope_tol_range[0], spike_fraction=spike_fraction)
         
@@ -110,7 +109,6 @@ def get_binary_mask(area, sigma):
                 return bin_edges[idx]
         
         # Fallback if no flattening found
-        # print("no flattening found")
         return 0.1
     
     def multi_stage_slope_tol_search(image, sigma, spike_fraction):
@@ -122,7 +120,6 @@ def get_binary_mask(area, sigma):
         best_slope, best_thresh = find_best_slope_tol(image, stage0_vals, sigma=sigma, spike_fraction=spike_fraction)
         
         if best_slope is None:
-            # print("No suitable slope_tol found in stage 1, falling back to default threshold")
             return 10, 0.2  # or any reasonable default slope_tol and threshold
 
         # Stage 1: Wide search with big steps (5)---------------------------------------------
@@ -132,7 +129,6 @@ def get_binary_mask(area, sigma):
         best_slope, best_thresh = find_best_slope_tol(image, stage1_vals, sigma=sigma, spike_fraction=spike_fraction)
         
         if best_slope is None:
-            # print("No suitable slope_tol found in stage 1, falling back to default threshold")
             return 10, 0.2  # or any reasonable default slope_tol and threshold
         
         # Stage 2: Narrow search +/- 5 around best from stage 1, steps of 1-------------------
@@ -143,7 +139,6 @@ def get_binary_mask(area, sigma):
         best_slope, best_thresh = find_best_slope_tol(image, stage2_vals, sigma=sigma, spike_fraction=spike_fraction)
         
         if best_slope is None:
-            # print("No suitable slope_tol found in stage 2, falling back to default threshold")
             return 10, 0.2
         
         # Stage 3: Narrow search +/- 1 around best from stage 2, steps of 0.2----------------------
@@ -153,7 +148,6 @@ def get_binary_mask(area, sigma):
         best_slope, best_thresh = find_best_slope_tol(image, stage3_vals, sigma=sigma, spike_fraction=spike_fraction)
         
         if best_slope is None:
-            # print("No suitable slope_tol found in stage 3, falling back to default threshold")
             return 10, 0.2
         
         # Stage 4: Narrow search +/- 0.5 around best from stage 2, steps of 0.05----------------------
@@ -163,7 +157,6 @@ def get_binary_mask(area, sigma):
         best_slope, best_thresh = find_best_slope_tol(image, stage4_vals, sigma=sigma, spike_fraction=spike_fraction)
         
         if best_slope is None:
-            # print("No suitable slope_tol found in stage 4, falling back to default threshold")
             return 10, 0.2
         
         return best_slope, best_thresh
@@ -267,9 +260,8 @@ def bin_setting(directory, repeats, conditions, markers, gastruloid_radius, num_
                 coordinates, coordinates_ids, largest_region_list, binary_mask_list = get_coordinates(img_boxes, selection_csv)
 
                 # print what we have to reconfirm, all should be the same length 
-                print("All these below should be the same length:-----------------------")
-                print("coor len", len(coordinates))
-                print("coor id len", len(coordinates_ids))
+                if len(coordinates) == len(coordinates_ids):
+                    print(f"Running analysis for {len(coordinates)} Gastruloids)")
 
                 # convert coordinates (in tuple format) into numpy array format
                 converted_coordinates = [np.array([[float(y), float(x)]]) for x, y in coordinates]
@@ -328,9 +320,6 @@ def bin_setting(directory, repeats, conditions, markers, gastruloid_radius, num_
                         counter = counter + 1
 
 
-                print(f"Finished adjusting for {marker_adjusting}")
-
-
             if adjusting:
                 for marker in markers:
                     if marker == "DAPI":
@@ -359,9 +348,7 @@ def bin_setting(directory, repeats, conditions, markers, gastruloid_radius, num_
 
                 binarymasks_path = f"{binarymasks_output_dir}/{condition}.npz"
                 
-                print(binary_mask_list)
                 # Flatten if nested
-
                 if any(isinstance(i, list) for i in binary_mask_list):
                     binary_mask_list = list(itertools.chain.from_iterable(binary_mask_list))
 

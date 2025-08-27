@@ -43,13 +43,23 @@ def color_image(gray_img, color):
 
 
 
-def overlay_channels(images_dir, condition, ID, markers, marker_colors):
+def overlay_channels(images_dir, condition, ID, markers, marker_colors, ref_marker, include_ref_marker):
     for key in marker_colors:
         if isinstance(marker_colors[key], str):
             marker_colors[key] = hex_to_rgb01(marker_colors[key])
 
     colored_images = []
     blended_image = None
+
+    if include_ref_marker:
+        marker_path = f"{images_dir}/img_{ref_marker}_{condition}/{ID:.0f}.tiff"
+        gray = np.array(Image.open(marker_path).convert('L'), dtype=float) / 255.0
+        rgb = color_image(gray, marker_colors[ref_marker])
+
+        if blended_image is None:
+            blended_image = rgb.copy()
+        else:
+            blended_image += rgb
 
     for marker in markers:
         marker_path = f"{images_dir}/img_{marker}_{condition}/{ID:.0f}.tiff"
@@ -62,23 +72,26 @@ def overlay_channels(images_dir, condition, ID, markers, marker_colors):
         rgb = color_image(gray, marker_colors[marker])
         colored_images.append(rgb)
 
-        if blended_image is None:
-            blended_image = rgb.copy()
-        else:
-            blended_image += rgb
+        if marker != ref_marker:
 
+            if blended_image is None:
+                blended_image = rgb.copy()
+            else:
+                blended_image += rgb
+
+        
     # Normalize: clip to [0,1]
     blended_image = np.clip(blended_image, 0, 1)
 
     return colored_images, blended_image
 
-def channels_plot_any(ID, directory, repeat, condition, markers, marker_colors):
+def channels_plot_any(ID, directory, repeat, condition, markers, marker_colors, ref_marker, include_ref_marker=False):
 
     images_dir = f"{directory}/{repeat}/boxes_tiff_selected"
     output_dir = f"{directory}/{repeat}/plots"
 
     
-    colored_images, merge_rgb = overlay_channels(images_dir, condition, ID, markers, marker_colors)
+    colored_images, merge_rgb = overlay_channels(images_dir, condition, ID, markers, marker_colors, ref_marker, include_ref_marker)
 
     # Create a single figure with 4 panels in a row
     num_plots = len(markers)+1

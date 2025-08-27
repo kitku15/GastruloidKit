@@ -60,8 +60,6 @@ def draw_grid(img):
             grid_mask[start_y:end_y, start_x:end_x] = label
             label += 1
 
-    print(f"\nMade grid")
-
     return grid_mask
 
 
@@ -309,7 +307,6 @@ def analyse_by_grid(directory, tiff, grid_mask, marker, condition, repeat, downs
     save_path = f"{heading_npz}.npz"
     np.savez_compressed(save_path, *upscaled_boxes)
     print(f"Saved {len(upscaled_boxes)} boxes to {save_path}")
-    print(f"Boxes done")
     return upscaled_boxes
 
 
@@ -337,11 +334,6 @@ def crop_and_save(args):
     '''
     
     box_id, tiff_small, grid_mask_small, heading = args
-
-    # if box_id == 638:
-    #     print(box_id) # dupa
-    # else:
-    #     return None
 
     image_shape_y, image_shape_x = grid_mask_small.shape
     grid_rows, grid_cols = 26, 26
@@ -385,7 +377,6 @@ def crop_and_save(args):
 
     plt.imsave(f"{heading}/{box_id}.tiff", cropped_small, cmap='gray') 
 
-    # print(f"added Box {box_id}")
     return cropped_small
 
 
@@ -457,7 +448,6 @@ def process_box(args):
     # removed saving blobs seperately as I just wanto save all radii and coordinates at the end     
 
     if len(blob) == 1:
-        print(f"Saved blob for box {box_id}")
         model_found = True
     elif len(blob) == 0:
         print(f"X No blobs detected in box {box_id}")
@@ -495,7 +485,6 @@ def detect_blob_in_all_boxes(mask_boxes, selection_csv):
     model_count = 0
 
     # only select boxes that are confirmed as pass
-    print(selected_boxes_ids)
     box_args = [(i + 1, box) for i, box in enumerate(mask_boxes) if (i + 1) in selected_boxes_ids] # (box_id, box)
 
     with ThreadPoolExecutor() as executor:
@@ -533,18 +522,15 @@ def grid_split(directory, markers, conditions, repeats, output_list=False):
                 
                 # draw grid
                 grid_mask = draw_grid(images[i])
-                print(f"finished making grid for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
                 # make mask boxes per repeat and save 
                 print(f"------------------------Starting mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
                 mask_boxes = analyse_by_grid(directory, masks[i], grid_mask, marker, condition, repeat, mask=True, rescale_switch = False)
-                print(len(mask_boxes), "should be 676")
                 print(f"------------------------finished mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
                 # make image boxes per repeat and save
                 print(f"------------------------Starting image boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
                 img_boxes = analyse_by_grid(directory, images[i], grid_mask, marker, condition, repeat, mask=False, rescale_switch = False)
-                print(len(img_boxes), "should be 676")
                 print(f"------------------------finished image boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
                 mask_boxes_list.append(mask_boxes)
@@ -588,21 +574,14 @@ def select_gastruloids(directory, marker, markers, conditions, repeats):
 
 
             # C. DETECT BLOB IN EACH MASK BOX AND SAVE
-            print(f"------------------------Starting Blob detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            print(f"------------------------Starting Gastruloid detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
             all_coordinates, all_radii, model_count = detect_blob_in_all_boxes(mask_boxes, selection_csv)
             print(f"Models detected: {model_count}/676")
-            print(f"------------------------Finished Blob detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            print(f"------------------------Finished Gastruloid detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
 
             # save all outputs for easy visualization and further analysis
-            print(f"------------------------Saving Blob detection outputs for repeat: {repeat}, condition: {condition}, marker: {marker} in {blobs_output_path}")
-            
-            print(f"------------------------{blobs_output_path} info:")
-            print("mask_boxes:", type(mask_boxes), len(mask_boxes), type(mask_boxes[0]))
-            print("img_boxes:",type(img_boxes), len(img_boxes), type(img_boxes[0]))
-            print("all_coordinates:",type(all_coordinates), len(all_coordinates), type(all_coordinates[0]))
-            print("all_radii:",type(all_radii), len(all_radii), type(all_radii[0]))
-            print(f"------------------------")
+            print(f"------------------------Saving Gastruloid detection outputs for repeat: {repeat}, condition: {condition}, marker: {marker} in {blobs_output_path}")
             
             np.savez(blobs_output_path,
                     all_coordinates=np.array(all_coordinates, dtype=object),
@@ -641,5 +620,4 @@ def boxes_tiff_selected(directory, repeats, conditions, markers):
                         src_path = os.path.join(boxes_tiffs_path, filename)
                         dst_path = os.path.join(img_output_dir, f"{counter_str}.tiff")
                         shutil.copy2(src_path, dst_path)
-                        print(f"Copied {filename} into {counter}")
                         counter += 1

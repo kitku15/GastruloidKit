@@ -109,7 +109,7 @@ def make_profile_plot(avg_df, bins_of_interest, n_points, bin_categories,
     plt.close()
 
 
-def plot_radial_bin_heatmap(avg_df, bins_of_interest, repeat, condition, save_dir, bin_label, marker_colors):
+def plot_radial_bin_heatmap(avg_df, bins_of_interest, repeat, condition, save_dir, bin_label, marker_colors, meta=False):
     """
     Make radial donut-style heatmaps for each marker and a combined overlay.
 
@@ -164,14 +164,25 @@ def plot_radial_bin_heatmap(avg_df, bins_of_interest, repeat, condition, save_di
         outer_circle = plt.Circle((0, 0), radius=1.0, fill=False, edgecolor="k", linewidth=1.5)
         ax.add_patch(outer_circle)
 
-        ax.set_title(f"{marker} Bin {bins_of_interest}, {condition} repeat: {repeat}", fontsize=12)
-        plt.tight_layout()
-        out_dir =  f"{save_dir}/radialheatmap/{condition}"
-        out_name = f"{marker}_{bin_label.lower()}_bin{bins_of_interest}.png"
-        out_path = os.path.join(out_dir, out_name)
-        os.makedirs(out_dir, exist_ok=True)
-        plt.savefig(out_path, dpi=300)
-        plt.close()
+        if not meta:
+            ax.set_title(f"{marker} Bin {bins_of_interest}, {condition} repeat: {repeat}", fontsize=12)
+            plt.tight_layout()
+            out_dir =  f"{save_dir}/radialheatmap/{condition}"
+            out_name = f"{marker}_{bin_label.lower()}_bin{bins_of_interest}.png"
+            out_path = os.path.join(out_dir, out_name)
+            os.makedirs(out_dir, exist_ok=True)
+            plt.savefig(out_path, dpi=300)
+            plt.close()
+        else:
+            ax.set_title(f"{marker}, {condition} repeat: {repeat}", fontsize=12)
+            plt.tight_layout()
+            out_dir =  f"{save_dir}"
+            out_name = f"radialheatmap_{marker}_{condition}.png"
+            out_path = os.path.join(out_dir, out_name)
+            os.makedirs(out_dir, exist_ok=True)
+            plt.savefig(out_path, dpi=300)
+            plt.close()
+
 
     # ---- Combined overlay heatmap ----
     fig, ax = plt.subplots(figsize=(5,5))
@@ -193,13 +204,24 @@ def plot_radial_bin_heatmap(avg_df, bins_of_interest, repeat, condition, save_di
                           facecolor=color, edgecolor="none")
             ax.add_patch(wedge)
 
-    outer_circle = plt.Circle((0, 0), radius=1.0, fill=False, edgecolor="k", linewidth=1.5)
-    ax.add_patch(outer_circle)
-    ax.set_title(f"Combined Bin {bins_of_interest}, {condition} repeat: {repeat}", fontsize=12)
+    if not meta:
+        outer_circle = plt.Circle((0, 0), radius=1.0, fill=False, edgecolor="k", linewidth=1.5)
+        ax.add_patch(outer_circle)
+        ax.set_title(f"Combined Bin {bins_of_interest}, {condition} repeat: {repeat}", fontsize=12)
 
-    out_dir = f"{save_dir}/radialheatmap/{condition}"
-    out_name = f"combined_{bin_label.lower()}_bin{bins_of_interest}.png"
-    out_path = os.path.join(out_dir, out_name)
-    os.makedirs(out_dir, exist_ok=True)
-    plt.savefig(out_path, dpi=300)
-    plt.close()
+        out_dir = f"{save_dir}/radialheatmap/{condition}"
+        out_name = f"combined_{bin_label.lower()}_bin{bins_of_interest}.png"
+        out_path = os.path.join(out_dir, out_name)
+        os.makedirs(out_dir, exist_ok=True)
+        plt.savefig(out_path, dpi=300)
+        plt.close()
+    else:
+        ax.set_title(f"{marker}, {condition} repeat: {repeat}", fontsize=12)
+        plt.tight_layout()
+        out_dir =  f"{save_dir}"
+        out_name = f"combined_radialheatmap_{condition}.png"
+        out_path = os.path.join(out_dir, out_name)
+        os.makedirs(out_dir, exist_ok=True)
+        plt.savefig(out_path, dpi=300)
+        plt.close()
+
