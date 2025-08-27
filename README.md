@@ -19,7 +19,7 @@ pip install .
 ```
 
 ## Preprocessing
-Before this library is used, the user will have to manually crop, adjust and create binary masks for all channels in the image using ImageJ. First you will have to convert all your .czi images into tiff as all the GastruloidKit takes images in tiff format. Arrange all of your czi files in a specific directory in this format:
+Before this library is used, the user will have to manually crop, adjust and create binary masks for all channels in the image using ImageJ. First you will have to convert all your .czi images into .tiff as GastruloidKit takes images in .tiff format. Arrange all of your czi files in a specific directory in this format:
 ```
 CHIP_REPEATS
 ├── 1 
@@ -32,9 +32,22 @@ CHIP_REPEATS
 │   ├── WT.czi
 │   └── ND6.czi
 ```
-In the example above we have WT and mutant (ND6) arranged in their respective numbered folders which represent which repeat they are a part of. In the example above, the directory name is 'CHIP_REPEATS' but this can be changed to anything you like. Next, we need to configure the settings for the analysis:
+In the example above we have WT and mutant (ND6) arranged in their respective numbered folders which represent which repeat they are a part of. In the example above, the directory name is 'CHIP_REPEATS' but this can be changed to anything you like. You set this up by configuring the settings for the analysis:
+
+|variable|details|  
+|-------------------|---|  
+|**wt**|what you label your wild type sample|
+|**mutant**|what you label your mutant sample|
+|**repeats**|which of your repeats to include in the analysis|
+|**markers**|List of markers imaged| 
+|**ref_marker**|Your nuclear stain / DNA stain| 
+|**channel_folders**|Dictionary of how markers are arranged in channels in your 3 dimensional image.| 
+|**marker_colors**|Dictionary of how you want your markers to be colored in plots and figures.| 
+|**directory**|A folder where all the analysis will take place| 
+
 
 ```python
+# 1. EXPERIMENT DETAILS SET UP ---------------------------------
 wt = "WT" # this should be WildType 
 mutant = "ND6" # change this to your mutant name 
 conditions = [wt, mutant]
@@ -53,8 +66,20 @@ channel_folders = {
     }
 # in the example above, channel 0 is DAPI, channel 1 is SOX2 and so on..
 
+# -------------------------------------------------------------
+# 2. DATA ANALYSIS SET UP -------------------------------------
 directory = "CHIP_REPEATS" # directory in which you saved your .czi images in the structure shown above.  
 
+marker_colors = { # This dictionary will determine what marker is plotted in what color. This is entirely up to you!
+    'SOX2': '#00bcd4', # cyan
+    'BRA': '#ffeb3b', # yellow
+    'GATA3': '#9c27b0', # magenta
+    'DAPI': "#0004ffff", # blue
+    'psmad159': "#ff0000ff" # red
+}
+
+num_bins = 15 # set how many bins you want; in this example I set 15
+gastruloid_radius = 110 # the radius of the gastruloid (will be the outermost circle); in this example I set 110 pixels
 ```
 Now we're all set up, lets convert CZI into Tiff.
 ```python
@@ -151,11 +176,8 @@ Now we begin Radial bin analysis of the gastruloids. In simple words, when you d
   <img src="README_images\1.png" alt="Example gastruloid radial bins" width="200"/>
 </p>
 
-You can choose how many bins of equal sizes you want your gastruloid to be divided into (yes any, 3-50 it can take it). 
-```python
-num_bins = 15 # set how many bins you want; in this example I set 15
-gastruloid_radius = 110 # the radius of the gastruloid (will be the outermost circle); in this example I set 110 pixels
-```
+You can choose how many bins of equal sizes you want your gastruloid to be divided into (yes any, 3-50 it can take it). This was set in your settings above. 
+
 Since we dont know what the gastruloid radius is (somewhere between 110-130 pixels usually) We will need to adjust it manually. What I mean by adjusting the radius manually is by setting the radius at a particular size and going over images like the one above to check that the outermost circle is approximately the same size as the gastruloid itself. 
 
 Run the block below to start adjustment with *adjusting = True* and *loading = False*. A new folder called **adjusting** will be made in your directory which will contain the images I mentioned above. Other folder made include:
@@ -174,14 +196,18 @@ from GastruloidKit.f_coordFinder import bin_setting
 
 # First time running it: run it with adjusting True and Loading False 
 bin_setting(directory, repeats, conditions, markers, gastruloid_radius, num_bins, adjusting=True, loading=False)
+```
 
+```python
 # When adjusting for gastruloid radius set adjusting True and Loading True
 bin_setting(directory, repeats, conditions, markers, gastruloid_radius, num_bins, adjusting=True, loading=True)
+```
 
+```python
 # when you are not adjusting for gastruloid radius set adjusting False and loading True. 
 bin_setting(directory, repeats, conditions, markers, gastruloid_radius, num_bins, adjusting=False, loading=True)
 
-# Remember loading is always False the first time you run it. Always True the next time you do to make sure it runs faster as making binary masks take quite awhile!!
+# Remember loading is always False the first time you run it. Always True the next time you do to make sure it runs faster as making binary masks take quite awhile and its much faster to load them!
 ```
 Now we've set the radial bins and got coordinates of the gastruloid centers, its time to measure raw intensities of each marker within each bin and normalize it by whatever reference marker you have (DAPI in my case) 
 
@@ -230,15 +256,6 @@ You can find all of these under the **plots** folder in your directory!
 
 ```python
 from GastruloidKit.f_intensityMeasurement import plot_gastruloidprofiles
-
-# This dictionary will determine what marker is plotted in what color. This is entirely up to you!
-marker_colors = {
-    'SOX2': '#00bcd4', # cyan
-    'BRA': '#ffeb3b', # yellow
-    'GATA3': '#9c27b0', # magenta
-    'DAPI': '#ffffffff', # white
-    'psmad159': '#2bff00ff' # neon green 
-}
 
 # make plots 
 plot_gastruloidprofiles(directory, repeats, conditions, markers, ref_marker, num_bins, marker_colors)
@@ -307,4 +324,10 @@ channels_plot_any(chosen_id, directory, chosen_repeat, chosen_condition, marker_
 markers_pair=("DAPI", "BRA") # 2 chosen markers for one that does pairs (because why not)
 channels_plot_pair(chosen_id, directory, chosen_repeat, chosen_condition, markers_pair, marker_colors) # same as above but only for 2 chosen markers 
 ```
-
+Now I'll wrap up with what excel (csv) files we have created incase you want to continue your analysis in excel and make more graphs! 
+|Directory|details|  
+|-------|-----------------------------------|  
+|**{repeat}/DAPI_profile/{condition}_drop.csv**|furthest bin in where normalized DAPI intensity is above 0.8 (or any threshold you set previously) for each gastruloid|
+|**{repeat}/distribution/{condition}_{marker}.csv**| The total intensity of a particular marker for each gastruloid. Raw intensity for DAPI, normalized intensity for other markers.|
+|**{repeat}/intensities/{num_bins}\_meta\_individual\_{condition}.csv**|Normalized intensity of markers in each bin for each gastruloid.|
+|**{num_bins}\_meta\_intensities.csv**|Average Normalized intensity of markers in each bin for each condition and repeat.| 
