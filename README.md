@@ -1,4 +1,8 @@
-# GastruloidKit 🧫🔬
+<p align="left">
+  <img src="README_images\GastruloidKit_logo.png" alt="Example gastruloid radial bins" width="500"/>
+</p>
+
+# GastruloidKit 
 A simple Python library for analyzing widefield microscopy images of 2D gastruloids on a 26 x 26 chip. Focuses on marker expression localization in form of bins (donuts).
 
 ## Installation
@@ -241,7 +245,17 @@ plot_gastruloidprofiles(directory, repeats, conditions, markers, ref_marker, num
 ```
 If by eye you can see your gastruloids are rather consistent per chip, these plots itself should be enough to let you visualize and quantify the difference in marker expression between your WT and mutant gastruloids. Whats interesting is when your gastruloids dont seem consistent in each CHIP and you want to explore the images even further. More specifically, you want to plot several gastruloid profiles split by a certain parameter. 
 
-For example, you want to see whether gastruloids with low DAPI intensity have a different profile compared to those with high DAPI intensity. Or.. if you want to see whether gastruloids with a smaller high density center have a different profile to those with a larger high density center. The second case is what I did and this is an example of the plots I get:
+For example, you want to see whether gastruloids with low DAPI intensity have a different profile compared to those with high DAPI intensity. Or.. if you want to see whether gastruloids with a smaller high density center have a different profile to those with a larger high density center. This is what I mean by high density center. 
+<p align="center">
+  <img src="README_images\14.png" alt="Gastruloid Overlap example WT" width="150"/>
+  <img src="README_images\15.png" alt="Gastruloid Overlap example ND6" width="150"/>
+  <img src="README_images\16.png" alt="Gastruloid Overlap example ND6" width="150"/>
+  
+  On the left is the gastruloid profile when the high density center is lower, on the right is when its higher. 
+</p>
+
+
+The second case is what I did and this is an example of the plots I get:
 <p align="center">
   <img src="README_images\10.png" alt="Gastruloid Overlap example WT" width="250"/>
   <img src="README_images\11.png" alt="Gastruloid Overlap example ND6" width="250"/>
@@ -266,7 +280,11 @@ get_DAPIcenter_distributions(directory, repeats, conditions, num_bins) # get DAP
 DAPIcenter_split_profiles(directory, repeats, conditions, num_bins, marker_colors) # split profiles by DAPI center size
 
 ```
-The distributions themself are also to look at to see how consistent your gastruloids are on the same chip!
+The distributions themself are also to look at to see how consistent your gastruloids are on the same chip! Plots made from running the block below are in the plots folder under sub-folders named:
+- DAPI_profile: DAPI Intensity in all bins along with the distribution of when they drop below 0.8 (you can adjust this drop threshold.)
+- DAPIcenter_profiles: how marker expression varies depending on the size of high density center of the gastruloid. 
+- DAPIintensity_profiles: how marker expression varies depending on DAPI Intensity 
+
 
 Now, I'm sure it will also be useful to pick a specific gastruloid and get a figure that looks like the one below!
 <p align="center">
