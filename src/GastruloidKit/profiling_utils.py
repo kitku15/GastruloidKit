@@ -7,7 +7,6 @@ from matplotlib.patches import Wedge
 from matplotlib.colors import LinearSegmentedColormap
 
 
-# ---------- CORE HELPERS ----------
 def white_to_color(color_name):
     return LinearSegmentedColormap.from_list("", ["#FFFFFF00", color_name])
 

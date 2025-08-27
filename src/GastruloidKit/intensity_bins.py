@@ -364,61 +364,6 @@ def plot_gastruloidprofiles(directory, repeats, conditions, markers, ref_marker,
 def white_to_color(color_name):
                 return LinearSegmentedColormap.from_list("", ["#FFFFFF00", color_name])
 
-def plot_radial_bin_heatmap(csv_path, repeat, condition, marker_colors, save_dir):
-    """
-    Make radial donut-style heatmaps for each marker and a combined one
-    """
-
-    df = pd.read_csv(csv_path)
-
-    # Remove DAPI
-    df = df[df['marker'].str.upper() != 'DAPI']
-
-    # Focus on specified repeat and condition
-    df = df[df['repeat'] == repeat]
-    df = df[df['condition'] == condition]
-
-    regions = [col for col in df.columns if col.startswith("bin_")]
-    num_bins = len(regions)
-
-    # Normalize values globally per marker
-    normed_values = {}
-    for _, row in df.iterrows():
-        marker = row["marker"]
-        y = row[regions].values.astype(float)
-        normed_values[marker] = (y - y.min()) / (y.max() - y.min() + 1e-6)
-    # ---- Plot one heatmap per marker ----
-    for marker, values in normed_values.items():
-        fig, ax = plt.subplots(figsize=(5,5))
-        ax.set_aspect("equal")
-        ax.axis("off")
-        ax.set_xlim(-1.1, 1.1)
-        ax.set_ylim(-1.1, 1.1)
-        cmap = plt.cm.get_cmap("Blues")  # fallback
-        if marker in marker_colors:
-            cmap = white_to_color(marker_colors[marker])  # your custom gradient
-        for j, val in enumerate(values):
-            r_inner = j / num_bins
-            r_outer = (j + 1) / num_bins
-            color = cmap(val)
-            wedge = Wedge(
-                center=(0, 0),
-                r=r_outer,
-                theta1=0, theta2=360,
-                width=r_outer - r_inner,
-                facecolor=color,
-                edgecolor="none"
-            )
-            ax.add_patch(wedge)
-        outer_circle = plt.Circle((0, 0), radius=1.0, fill=False, edgecolor="k", linewidth=1.5)
-        ax.add_patch(outer_circle)
-        ax.set_title(f"{marker}, {condition} repeat: {repeat}", fontsize=12)
-        plt.tight_layout()
-        out_path = os.path.join(save_dir, f"radialheatmap_{marker}_{condition}.png")
-        plt.savefig(out_path, dpi=300)
-        plt.close()
-        print(f"Saved radial heatmap: {out_path}")
-
 def bins_plot(csv_path, repeat, marker_colors, plot_type='line', save_dir='plots'):
 
 
@@ -536,7 +481,9 @@ def DAPIintensity_split_profiles(directory, repeats, conditions, num_bins, marke
             )
 
             for bin_idx in [1,2,3,4,5]:
-                avg_df, n_points = get_avg_df(dapi_df, "intensity_bin", [bin_idx], meta_indiv_df)
+                print(dapi_df.columns)
+                print(meta_indiv_df.columns)
+                avg_df, n_points = get_avg_df(dapi_df, "intensity_bin", [bin_idx], meta_indiv_df, id_col="ID")
                 make_profile_plot(avg_df, bin_idx, n_points, bin_categories, repeat, condition,
                                   save_dir, bin_label="DAPI", marker_colors=marker_colors)
                 plot_radial_bin_heatmap(avg_df, bin_idx, repeat, condition, save_dir, "DAPI", marker_colors)
@@ -565,7 +512,7 @@ def DAPIcenter_split_profiles(directory, repeats, conditions, num_bins, marker_c
             meta_indiv_path = f"{directory}/{repeat}/intensities/{num_bins}_meta_individual_{condition}.csv"
             meta_indiv_df = pd.read_csv(meta_indiv_path)
 
-            furthest_path = f"{directory}/{repeat}/intensities/DAPI_bins_{condition}/drop.csv"
+            furthest_path = f"{directory}/{repeat}/DAPI_profile/{condition}_drop.csv"
             furthest_df = pd.read_csv(furthest_path)
 
             bin_edges = np.linspace(furthest_df["furthest_bin"].min(), furthest_df["furthest_bin"].max(), 6)

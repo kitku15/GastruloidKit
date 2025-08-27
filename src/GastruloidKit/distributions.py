@@ -140,8 +140,12 @@ def normalize_by_dapi(marker_csv, dapi_csv, output_path):
     marker_df = pd.read_csv(marker_csv)
     dapi_df = pd.read_csv(dapi_csv)
 
-    # Check that the Index columns match
-    if not marker_df['Index'].equals(dapi_df['Index']):
+    # Rename the 'Index' column to 'ID' in DAPI DataFrame if needed
+    if 'Index' in dapi_df.columns:
+        dapi_df = dapi_df.rename(columns={'Index': 'ID'})
+
+    # Check that the ID columns match
+    if not marker_df['ID'].equals(dapi_df['ID']):
         raise ValueError("Indexes do not match between marker and DAPI CSVs.")
 
     # Add a new column with normalized values
@@ -219,13 +223,6 @@ def get_distributions(directory, repeats, conditions, markers):
             print("Trying to load:", regions_path)
             regions_data = np.load(regions_path, allow_pickle=True)
             regions = regions_data["regions"]
-            
-            print("loading binary masks...")
-            binarymasks_output_dir = f"{directory}/{repeat}/binarymasks"
-            binarymasks_path = f"{binarymasks_output_dir}/{condition}.npz"
-            print("Trying to load:", binarymasks_path)
-            binarymasks_data = np.load(binarymasks_path, allow_pickle=True)
-            binary_masks = binarymasks_data["binarymasks"]
 
             # load selected IDs
             selection_output_dir = f"{directory}/{repeat}/selection"
@@ -256,7 +253,7 @@ def get_distributions(directory, repeats, conditions, markers):
                     # SAVE TO CSV
                     with open(intensity_means_output_path, 'w', newline='') as file:
                         writer = csv.writer(file)
-                        writer.writerow(['Index', 'intensity']) 
+                        writer.writerow(['ID', 'intensity']) 
                         for i in range(len(intensity_means)):
                             writer.writerow([i+1, intensity_means[i]])
 

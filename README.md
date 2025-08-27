@@ -2,7 +2,17 @@
 A simple Python library for analyzing widefield microscopy images of 2D gastruloids on a 26 x 26 chip. Focuses on marker expression localization in form of bins (donuts).
 
 ## Installation
-pip install GastruloidKit
+```bash
+python3 -m venv gastruloid-env
+
+# On linux/macOS
+source gastruloid-env/bin/activate
+# On windows
+gastruloid-env\Scripts\activate
+
+cd GastruloidKit
+pip install .
+```
 
 ## Preprocessing
 Before this library is used, the user will have to manually crop, adjust and create binary masks for all channels in the image using ImageJ. First you will have to convert all your .czi images into tiff as all the GastruloidKit takes images in tiff format. Arrange all of your czi files in a specific directory in this format:

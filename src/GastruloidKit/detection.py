@@ -1,4 +1,5 @@
-import os                              
+import os   
+import re                           
 import csv                            
 import shutil                       
 import numpy as np                    
@@ -121,9 +122,15 @@ def load_allowed_ids(csv_path):
 
 def manual_selection(image_folder, output_csv):
 
+    
+    def extract_number(filename):
+        # Extract the number from filename like '123.tiff'
+        match = re.match(r"(\d+)", filename)
+        return int(match.group(1)) if match else float('inf')  # inf pushes non-numbered files to the end
+
     # === Load images ===
     image_files = [f for f in os.listdir(image_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff'))]
-    image_files.sort()  # Optional: sort images for consistency
+    image_files.sort(key=extract_number) 
     current_index = 0
 
     # === Load existing labels if continuing ===
@@ -133,7 +140,9 @@ def manual_selection(image_folder, output_csv):
             reader = csv.reader(f)
             labels = {rows[0]: rows[1] for rows in reader}
         # Remove already-labeled images
-        image_files = [img for img in image_files if img not in labels]
+        print('Number of images', len(image_files))
+        image_files = [img_path for img_path in image_files if str(extract_number(img_path)) not in labels]
+        print('Remaining images to label', len(image_files))
 
     # === Tkinter Setup ===
     root = Tk()
@@ -147,6 +156,7 @@ def manual_selection(image_folder, output_csv):
         if current_index >= len(image_files):
             print("All images labeled!")
             root.quit()
+            root.destroy()
             return
         img_path = os.path.normpath(os.path.join(image_folder, image_files[current_index]))
         img = Image.open(img_path)
@@ -544,62 +554,60 @@ def grid_split(directory, markers, conditions, repeats, output_list=False):
         return mask_boxes_list, img_boxes_list
 
 
-def select_gastruloids(directory, markers, conditions, repeats):
+def select_gastruloids(directory, marker, markers, conditions, repeats):
 
     for repeat in repeats:
         for condition in conditions:
-            for marker in markers:
-        
-                # getting directories
-                mask_boxes_path = f"{directory}/{repeat}/boxes_npz/mask_{marker}_{condition}.npz"
-                image_boxes_path = f"{directory}/{repeat}/boxes_npz/img_{marker}_{condition}.npz"
+            # getting directories
+            mask_boxes_path = f"{directory}/{repeat}/boxes_npz/mask_{marker}_{condition}.npz"
+            image_boxes_path = f"{directory}/{repeat}/boxes_npz/img_{marker}_{condition}.npz"
 
-                blobs_output_directory = f"{directory}/{repeat}/blobs_npz"
-                blobs_output_path = f"{blobs_output_directory}/{marker}_{condition}.npz"
-                os.makedirs(blobs_output_directory, exist_ok=True)
-                
-                # A. RELOAD: IMAGE, MASK BOXES 
-                print(f"------------------------Starting Load mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                mask_boxes = load_boxes(mask_boxes_path) 
-                print(f"------------------------Finished Load mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            blobs_output_directory = f"{directory}/{repeat}/blobs_npz"
+            blobs_output_path = f"{blobs_output_directory}/{marker}_{condition}.npz"
+            os.makedirs(blobs_output_directory, exist_ok=True)
+            
+            # A. RELOAD: IMAGE, MASK BOXES 
+            print(f"------------------------Starting Load mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            mask_boxes = load_boxes(mask_boxes_path) 
+            print(f"------------------------Finished Load mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
-                print(f"------------------------Starting Load images boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                img_boxes = load_boxes(image_boxes_path)
-                print(f"------------------------Finished Load images boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                
-                selection_output_dir = f"{directory}/{repeat}/selection"
-                os.makedirs(selection_output_dir, exist_ok=True)
-                selection_csv = f"{selection_output_dir}/img_DAPI_{condition}.csv"
+            print(f"------------------------Starting Load images boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            img_boxes = load_boxes(image_boxes_path)
+            print(f"------------------------Finished Load images boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            
+            selection_output_dir = f"{directory}/{repeat}/selection"
+            os.makedirs(selection_output_dir, exist_ok=True)
+            selection_csv = f"{selection_output_dir}/img_DAPI_{condition}.csv"
 
 
-                # # B. MANUALLY REVIEW WHICH BOXES TO INCLUDE AND WHICH TO LEAVE OUT
-                print(f"------------------------Starting Manual Selection for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                images_folder = f"{directory}/{repeat}/boxes_tiff/img_{marker}_{condition}"
-                manual_selection(images_folder, selection_csv)
-                print(f"------------------------Finished Manual Selection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            # # B. MANUALLY REVIEW WHICH BOXES TO INCLUDE AND WHICH TO LEAVE OUT
+            print(f"------------------------Starting Manual Selection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            images_folder = f"{directory}/{repeat}/boxes_tiff/img_{marker}_{condition}"
+            manual_selection(images_folder, selection_csv)
+            print(f"------------------------Finished Manual Selection for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
 
-                # C. DETECT BLOB IN EACH MASK BOX AND SAVE
-                print(f"------------------------Starting Blob detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                all_coordinates, all_radii, model_count = detect_blob_in_all_boxes(mask_boxes, selection_csv)
-                print(f"Models detected: {model_count}/676")
-                print(f"------------------------Finished Blob detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            # C. DETECT BLOB IN EACH MASK BOX AND SAVE
+            print(f"------------------------Starting Blob detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            all_coordinates, all_radii, model_count = detect_blob_in_all_boxes(mask_boxes, selection_csv)
+            print(f"Models detected: {model_count}/676")
+            print(f"------------------------Finished Blob detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
 
-                # save all outputs for easy visualization and further analysis
-                print(f"------------------------Saving Blob detection outputs for repeat: {repeat}, condition: {condition}, marker: {marker} in {blobs_output_path}")
-                
-                print(f"------------------------{blobs_output_path} info:")
-                print("mask_boxes:", type(mask_boxes), len(mask_boxes), type(mask_boxes[0]))
-                print("img_boxes:",type(img_boxes), len(img_boxes), type(img_boxes[0]))
-                print("all_coordinates:",type(all_coordinates), len(all_coordinates), type(all_coordinates[0]))
-                print("all_radii:",type(all_radii), len(all_radii), type(all_radii[0]))
-                print(f"------------------------")
-                
-                np.savez(blobs_output_path,
-                        all_coordinates=np.array(all_coordinates, dtype=object),
-                        all_radii=np.array(all_radii, dtype=object))
-                
+            # save all outputs for easy visualization and further analysis
+            print(f"------------------------Saving Blob detection outputs for repeat: {repeat}, condition: {condition}, marker: {marker} in {blobs_output_path}")
+            
+            print(f"------------------------{blobs_output_path} info:")
+            print("mask_boxes:", type(mask_boxes), len(mask_boxes), type(mask_boxes[0]))
+            print("img_boxes:",type(img_boxes), len(img_boxes), type(img_boxes[0]))
+            print("all_coordinates:",type(all_coordinates), len(all_coordinates), type(all_coordinates[0]))
+            print("all_radii:",type(all_radii), len(all_radii), type(all_radii[0]))
+            print(f"------------------------")
+            
+            np.savez(blobs_output_path,
+                    all_coordinates=np.array(all_coordinates, dtype=object),
+                    all_radii=np.array(all_radii, dtype=object))
+    
     boxes_tiff_selected(directory, repeats, conditions, markers)
 
 def boxes_tiff_selected(directory, repeats, conditions, markers):

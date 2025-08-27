@@ -322,28 +322,4 @@ def check_dimensions(directory):
                     print(f"{filepath}: {shape}")
                 except Exception as e:
                     print(f"Error reading {filepath}: {e}")
-
-
-
-
-
-
-if __name__ == "__main__":
-    directory = "CHIP_REPEATS_NEW" 
-    repeats = [2]
-
-    wt = "WT"
-    mutant = "ND6" # change this to your mutant type 
-    conditions = [wt, mutant]
-
-    markers = ["DAPI", "SOX2", "BRA", "GATA3"] # change this to your markers 
-
-
-    channel_folders = { 
-        0: 'DAPI',
-        1: 'SOX2',
-        2: 'GATA3',
-        3: 'BRA'
-    }
-
-    split_into_channels(directory, repeats, conditions, channel_folders)
+                    

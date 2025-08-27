@@ -3,13 +3,16 @@ import numpy as np
 from skimage import color        
 from skimage.filters import gaussian
 from scipy.ndimage import gaussian_filter1d
-from skimage import img_as_float   
+from skimage import img_as_float
 from skimage.measure import label, regionprops
+
 from skimage import measure
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from concurrent.futures import ThreadPoolExecutor
 from GastruloidKit.detection import load_boxes, load_allowed_ids
+import itertools
+
 
 def get_binary_mask(area, sigma):
 
@@ -173,6 +176,9 @@ def get_binary_mask(area, sigma):
 
     labeled = measure.label(binary_mask) # Label connected components
     regions = measure.regionprops(labeled) # Measure properties
+    if not regions:
+        raise Exception("No regions found for binary mask")
+
     largest_region = max(regions, key=lambda r: r.area)
 
     return largest_region, binary_mask, blurred, binary_thresh
@@ -291,13 +297,17 @@ def bin_setting(directory, repeats, conditions, markers, gastruloid_radius, num_
                         marker_box = img_as_float(marker_box)
                     
                         # Visualize binary mask ---------------------------------
-                        fig, ax = plt.subplots(figsize=(8, 4))
+                        fig, ax = plt.subplots(figsize=(8, 4))   
 
                         # Use ax[0] for the original image and annotations
                         ax.imshow(marker_box, cmap='gray')
                         ax.set_title(f"{marker_adjusting}_{num_bins}_{gastruloid_radius}")
 
-                        cx, cy = coordinates[counter][0]
+                        if loading:
+                            cx, cy = coordinates[counter][0]
+                        else:
+                            cy, cx = coordinates[counter]
+
                         ax.scatter(cx, cy, s=50, edgecolors='red', facecolors='none', linewidth=2, label='Centroid')
 
                         # make circles
@@ -348,7 +358,16 @@ def bin_setting(directory, repeats, conditions, markers, gastruloid_radius, num_
                 os.makedirs(binarymasks_output_dir, exist_ok=True)
 
                 binarymasks_path = f"{binarymasks_output_dir}/{condition}.npz"
-                np.savez(binarymasks_path, binarymasks=np.array(binary_mask_list, dtype=object))
+                
+                print(binary_mask_list)
+                # Flatten if nested
+
+                if any(isinstance(i, list) for i in binary_mask_list):
+                    binary_mask_list = list(itertools.chain.from_iterable(binary_mask_list))
+
+                # Convert all to numpy arrays
+                binary_mask_list = [np.array(mask) if not isinstance(mask, np.ndarray) else mask for mask in binary_mask_list]
+                np.savez(binarymasks_path, *binary_mask_list)
 
 
             

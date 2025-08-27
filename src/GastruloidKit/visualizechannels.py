@@ -31,49 +31,69 @@ def hex_to_rgb01(color):
 
 
 def color_image(gray_img, color):
-    """Convert a grayscale image to an RGB image with a specific color."""
-    return np.stack([gray_img]*3, axis=-1) * color
+    """
+    Multiply grayscale image (H, W) by RGB color (3,) or RGBA (4,).
+    Result is an RGB image where intensity is modulated by color.
 
-def overlay_channels(gata3_img_path, sox2_img_path, bra_img_path, dapi_img_path, marker_colors):
+    """
 
+    rgb_img = np.stack([gray_img]*3, axis=-1)  # shape (H, W, 3)
+    color = np.array(color[:3])  # ignore alpha if present
+    return rgb_img * color
+
+
+
+def overlay_channels(images_dir, condition, ID, markers, marker_colors):
     for key in marker_colors:
         if isinstance(marker_colors[key], str):
             marker_colors[key] = hex_to_rgb01(marker_colors[key])
 
-    # Load grayscale images
-    dapi = np.array(Image.open(dapi_img_path).convert('L'), dtype=float)/255.0
-    gata3 = np.array(Image.open(gata3_img_path).convert('L'), dtype=float)/255.0
-    sox2  = np.array(Image.open(sox2_img_path).convert('L'), dtype=float)/255.0
-    bra   = np.array(Image.open(bra_img_path).convert('L'), dtype=float)/255.0
+    colored_images = []
+    blended_image = None
 
-    # Create colored images
-    dapi_rgb = color_image(gata3, marker_colors['DAPI'])
-    gata3_rgb = color_image(gata3, marker_colors['GATA3'])
-    sox2_rgb  = color_image(sox2, marker_colors['SOX2'])
-    bra_rgb   = color_image(bra, marker_colors['BRA'])
+    for marker in markers:
+        marker_path = f"{images_dir}/img_{marker}_{condition}/{ID:.0f}.tiff"
 
-    # Merge: pixel-wise max
-    merge_rgb = np.maximum.reduce([gata3_rgb, sox2_rgb, bra_rgb])
-    merge_rgb = np.clip(merge_rgb, 0, 1)
+        if not os.path.exists(marker_path):
+            print(f"Warning: file not found for {marker}: {marker_path}")
+            continue
 
-    return sox2_rgb, bra_rgb, gata3_rgb, dapi_rgb, merge_rgb
+        gray = np.array(Image.open(marker_path).convert('L'), dtype=float) / 255.0
+        rgb = color_image(gray, marker_colors[marker])
+        colored_images.append(rgb)
 
-def channels_plot_any(ID, directory, repeat, condition, marker_colors):
+        if blended_image is None:
+            blended_image = rgb.copy()
+        else:
+            blended_image += rgb
+
+    # Normalize: clip to [0,1]
+    blended_image = np.clip(blended_image, 0, 1)
+
+    return colored_images, blended_image
+
+def channels_plot_any(ID, directory, repeat, condition, markers, marker_colors):
 
     images_dir = f"{directory}/{repeat}/boxes_tiff_selected"
     output_dir = f"{directory}/{repeat}/plots"
-    
-    dapi_img_path = f"{images_dir}/img_DAPI_{condition}/{ID:.0f}.tiff"
-    gata3_img_path = f"{images_dir}/img_GATA3_{condition}/{ID:.0f}.tiff"
-    sox2_img_path  = f"{images_dir}/img_SOX2_{condition}/{ID:.0f}.tiff"
-    bra_img_path   = f"{images_dir}/img_BRA_{condition}/{ID:.0f}.tiff"
 
-    sox2_rgb, bra_rgb, gata3_rgb, dapi_rgb, merge_rgb = overlay_channels(gata3_img_path, sox2_img_path, bra_img_path, dapi_img_path, marker_colors)
+    
+    colored_images, merge_rgb = overlay_channels(images_dir, condition, ID, markers, marker_colors)
 
     # Create a single figure with 4 panels in a row
-    fig, axes = plt.subplots(1, 5, figsize=(20, 4))
-    images = [dapi_rgb, sox2_rgb, bra_rgb, gata3_rgb, merge_rgb]
-    titles = ['DAPI','SOX2', 'BRA', 'GATA3', 'Merge']
+    num_plots = len(markers)+1
+    len_plot = 4*num_plots
+    fig, axes = plt.subplots(1, num_plots, figsize=(len_plot, 4))
+
+    images = []
+    for image in colored_images:
+        images.append(image)
+    images.append(merge_rgb)
+
+    titles = []
+    for marker in markers:
+        titles.append(marker)
+    titles.append('Merge')
 
     for ax, img, title in zip(axes, images, titles):
         ax.imshow(img)
@@ -94,12 +114,12 @@ def channels_plot_any(ID, directory, repeat, condition, marker_colors):
 
 def channels_plot_pair(ID, directory, repeat, condition, markers, marker_colors):
     """
-    Plot two chosen markers and their merge for a given gastruloid ID, condition, and repeat.
+    Plot two chosen markers and their merged overlay for a given gastruloid ID, condition, and repeat.
 
     Parameters
     ----------
     ID : int or float
-        Gastruloid ID (can be float but will be cast to int in filenames).
+        Gastruloid ID (cast to int for filename).
     directory : str
         Base directory path.
     repeat : str or int
@@ -107,37 +127,38 @@ def channels_plot_pair(ID, directory, repeat, condition, markers, marker_colors)
     condition : str
         Condition name.
     markers : tuple of str
-        Two markers chosen from ("SOX2", "BRA", "GATA3").
+        Two markers to plot (e.g. ("SOX2", "BRA")).
+    marker_colors : dict
+        Mapping marker names to hex colors or RGB tuples.
     """
-
 
     images_dir = f"{directory}/{repeat}/boxes_tiff_selected"
     output_dir = f"{directory}/{repeat}/plots"
     os.makedirs(output_dir, exist_ok=True)
 
-
-    # Build image paths
-    paths = {
-        "SOX2": f"{images_dir}/img_SOX2_{condition}/{ID:.0f}.tiff",
-        "BRA": f"{images_dir}/img_BRA_{condition}/{ID:.0f}.tiff",
-        "GATA3": f"{images_dir}/img_GATA3_{condition}/{ID:.0f}.tiff",
-        "DAPI": f"{images_dir}/img_DAPI_{condition}/{ID:.0f}.tiff",
-        "psmad159": f"{images_dir}/img_psmad159_{condition}/{ID:.0f}.tiff",
-    }
-
-    # Overlay just the selected markers
     imgs_rgb = {}
 
+    # Convert colors upfront (handle hex -> rgb)
+    for key in marker_colors:
+        if isinstance(marker_colors[key], str):
+            marker_colors[key] = hex_to_rgb01(marker_colors[key])
+
+    # Load and color images
     for marker in markers:
-        gray = np.array(Image.open(paths[marker]).convert("L"), dtype=float)/255.0
-        imgs_rgb[marker] = color_image(gray, hex_to_rgb01(marker_colors[marker]))
+        marker_path = f"{images_dir}/img_{marker}_{condition}/{int(ID)}.tiff"
+        if not os.path.exists(marker_path):
+            raise FileNotFoundError(f"Marker image not found: {marker_path}")
 
-    # Merge by pixel-wise max
-    merge_rgb = np.maximum(imgs_rgb[markers[0]], imgs_rgb[markers[1]])
+        gray = np.array(Image.open(marker_path).convert("L"), dtype=float) / 255.0
+        imgs_rgb[marker] = color_image(gray, marker_colors[marker])
 
-    # Plot: marker1, marker2, merge
+    # Blend the two images by simple addition (clipped)
+    merge_rgb = np.clip(imgs_rgb[markers[0]] + imgs_rgb[markers[1]], 0, 1)
+
+    # Plot: individual markers and merged overlay
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-    for ax, marker in zip(axes, [markers[0], markers[1]]):
+
+    for ax, marker in zip(axes[:2], markers):
         ax.imshow(imgs_rgb[marker])
         ax.set_title(marker)
         ax.axis("off")
@@ -151,9 +172,10 @@ def channels_plot_pair(ID, directory, repeat, condition, markers, marker_colors)
     plt.subplots_adjust(top=0.8)
 
     out_dir = f"{output_dir}/channels/pairs/"
-    out_name =  f"{condition}_{int(ID)}_{markers[0]}_{markers[1]}.png"
+    os.makedirs(out_dir, exist_ok=True)
+    out_name = f"{condition}_{int(ID)}_{markers[0]}_{markers[1]}.png"
     out_path = os.path.join(out_dir, out_name)
 
-    os.makedirs(out_dir, exist_ok=True)
     plt.savefig(out_path)
     plt.close(fig)
+
