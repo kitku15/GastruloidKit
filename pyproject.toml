@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "GastruloidKit"  
+version = "0.1.0"
+description = "A Python library for analyzing 2D gastruloids imaged in widefield microscopy"
+authors = [
+    { name="Bunga Tiasyaira", email="akbarah97@gmail.com" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Dependencies automatically installed with your package
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "scikit-image>=0.25",
+    "pandas>=2.1",
+    "Pillow>=10.0",
+    "opencv-python>=4.8",
+    "tifffile>=2025.6",
+    "czifile>=2019.7",
+    "csbdeep>=0.8",
+    "tensorflow>=2.18"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}   
+
+[tool.setuptools.packages.find]
+where = ["src"]

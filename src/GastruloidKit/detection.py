@@ -1,5 +1,18 @@
-from imports import *
-from f_preprocessing import reload_cropped
+import os   
+import re                           
+import csv                            
+import shutil                       
+import numpy as np                    
+import matplotlib.pyplot as plt        
+from skimage.transform import rescale, resize  
+from skimage.filters import gaussian            
+from skimage import img_as_float                 
+from skimage.feature import blob_log
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor 
+from tkinter import Tk, Label, Button           
+from PIL import Image, ImageTk                 
+from GastruloidKit.preprocessing import load_image_and_mask
 
 
 def draw_grid(img):
@@ -46,8 +59,6 @@ def draw_grid(img):
             # Label the region
             grid_mask[start_y:end_y, start_x:end_x] = label
             label += 1
-
-    print(f"\nMade grid")
 
     return grid_mask
 
@@ -97,8 +108,90 @@ def load_blobs(filename):
     
     return blob, coordinates, radii
 
+def load_allowed_ids(csv_path):
+    allowed_ids = []
+    with open(csv_path, newline='') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) == 2 and row[1].strip().lower() == 'yes':
+                allowed_ids.append(int(row[0]))
+    return allowed_ids
 
-def detect_blobs(tiff, downscale_factor=0.25, sigma=2, min_sigma=20, max_sigma=50, exclude_border=45):
+
+def manual_selection(image_folder, output_csv):
+
+    
+    def extract_number(filename):
+        # Extract the number from filename like '123.tiff'
+        match = re.match(r"(\d+)", filename)
+        return int(match.group(1)) if match else float('inf')  # inf pushes non-numbered files to the end
+
+    # === Load images ===
+    image_files = [f for f in os.listdir(image_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff'))]
+    image_files.sort(key=extract_number) 
+    current_index = 0
+
+    # === Load existing labels if continuing ===
+    labels = {}
+    if os.path.exists(output_csv):
+        with open(output_csv, newline='') as f:
+            reader = csv.reader(f)
+            labels = {rows[0]: rows[1] for rows in reader}
+        # Remove already-labeled images
+        print('Number of images', len(image_files))
+        image_files = [img_path for img_path in image_files if str(extract_number(img_path)) not in labels]
+        print('Remaining images to label', len(image_files))
+
+    # === Tkinter Setup ===
+    root = Tk()
+    root.title("Image Labeler")
+
+    # === Image Display ===
+    label = Label(root)
+    label.pack()
+
+    def load_image():
+        if current_index >= len(image_files):
+            print("All images labeled!")
+            root.quit()
+            root.destroy()
+            return
+        img_path = os.path.normpath(os.path.join(image_folder, image_files[current_index]))
+        img = Image.open(img_path)
+        img.thumbnail((600, 600))  # Resize for screen
+        img_tk = ImageTk.PhotoImage(img)
+        label.config(image=img_tk)
+        label.image = img_tk  # Keep a reference!
+
+    def save_label(answer):
+        nonlocal current_index
+        image_name = image_files[current_index]
+        labels[image_name] = answer
+        with open(output_csv, 'a', newline='') as f:
+            writer = csv.writer(f)
+            number_only = image_name.split(".")[0]
+            writer.writerow([number_only, answer])
+        current_index += 1
+        load_image()
+
+    # === Buttons ===
+    btn_yes = Button(root, text="Yes (Y)", width=10, command=lambda: save_label('yes'))
+    btn_yes.pack(side='left', padx=20, pady=20)
+
+    btn_no = Button(root, text="No (N)", width=10, command=lambda: save_label('no'))
+    btn_no.pack(side='right', padx=20, pady=20)
+
+    # === Keyboard Shortcuts ===
+    root.bind('y', lambda event: save_label('yes'))
+    root.bind('n', lambda event: save_label('no'))
+
+    # === Start ===
+    load_image()
+    root.mainloop()
+
+
+
+def detect_blobs(tiff, downscale_factor=0.25, sigma=2, min_sigma=20, max_sigma=50, exclude_border=0):
     '''
     Detects blobs in a TIFF image using the Laplacian of Gaussian (LoG) method after downscaling.
 
@@ -124,12 +217,8 @@ def detect_blobs(tiff, downscale_factor=0.25, sigma=2, min_sigma=20, max_sigma=5
 
     downsampled = rescale(tiff, downscale_factor, anti_aliasing=True)  # 4x smaller
 
-    # #invert
-    # tiff = invert(tiff)
-    
     # Convert to float and normalize
     tiff = img_as_float(downsampled)
-
 
     # smooth
     smoothed = gaussian(tiff, sigma)
@@ -156,7 +245,7 @@ def detect_blobs(tiff, downscale_factor=0.25, sigma=2, min_sigma=20, max_sigma=5
     return blob, coordinates_rescaled, radii_rescaled
 
 
-def analyse_by_grid(tiff, grid_mask, marker, condition, repeat, downscale_factor=0.25, mask=True, rescale_switch=True):
+def analyse_by_grid(directory, tiff, grid_mask, marker, condition, repeat, downscale_factor=0.25, mask=True, rescale_switch=True):
     '''
     Analyzes an image by dividing it into grid regions and extracting each region in parallel,
     optionally downscaling before processing and upscaling the results afterward.
@@ -194,15 +283,12 @@ def analyse_by_grid(tiff, grid_mask, marker, condition, repeat, downscale_factor
 
     # make and set all directory paths 
     unique_boxes = np.unique(grid_mask_small)
-    npz_directory = f"boxes_npz/{repeat}"
-    tiff_directory =f"boxes_tiff/{repeat}"
+    npz_directory = f"{directory}/{repeat}/boxes_npz"
+    tiff_directory =f"{directory}/{repeat}/boxes_tiff"
     os.makedirs(npz_directory, exist_ok=True)
     os.makedirs(tiff_directory, exist_ok=True)
     heading_npz = f"{npz_directory}/mask_{marker}_{condition}" if mask else f"{npz_directory}/img_{marker}_{condition}"
     heading_tiff = f"{tiff_directory}/mask_{marker}_{condition}" if mask else f"{tiff_directory}/img_{marker}_{condition}"
-
-    # set scale status, not really used but Ill keep this for now
-    scale_status = "rescale" if rescale_switch else "NOrescale"
 
     # Crop and save tiffs individually (slow but good for manual visual checking)
     args_list = [(box_id, tiff_small, grid_mask_small, heading_tiff) for box_id in unique_boxes]
@@ -218,10 +304,9 @@ def analyse_by_grid(tiff, grid_mask, marker, condition, repeat, downscale_factor
         upscaled_boxes = cropped_boxes
 
     # save npz file
-    save_path = f"{heading_npz}_{scale_status}_boxes.npz"
+    save_path = f"{heading_npz}.npz"
     np.savez_compressed(save_path, *upscaled_boxes)
     print(f"Saved {len(upscaled_boxes)} boxes to {save_path}")
-    print(f"Boxes done")
     return upscaled_boxes
 
 
@@ -247,17 +332,51 @@ def crop_and_save(args):
         - Assumes the output directory `boxes/{heading}/` already exists.
         - The image is saved as 8-bit PNG after scaling to [0, 255].
     '''
+    
     box_id, tiff_small, grid_mask_small, heading = args
-    box_mask = grid_mask_small == box_id
-    ys, xs = np.where(box_mask)
-    ymin, ymax = ys.min(), ys.max() + 1
-    xmin, xmax = xs.min(), xs.max() + 1
-    cropped_small = tiff_small[ymin:ymax, xmin:xmax]
+
+    image_shape_y, image_shape_x = grid_mask_small.shape
+    grid_rows, grid_cols = 26, 26
+
+    box_x = (box_id - 1) % grid_cols
+    box_y = (box_id - 1) // grid_cols
+
+    box_width = image_shape_x // grid_cols
+    box_height = image_shape_y // grid_rows
+
+    pad = 30  # padding in pixels
+
+    xmin = (box_x * box_width)
+    xmax = (box_x + 1) * box_width if box_x < grid_cols - 1 else image_shape_x
+
+    ymin = box_y * box_height
+    ymax = (box_y + 1) * box_height if box_y < grid_rows - 1 else image_shape_y
+
+    # add pad if not edges
+    if xmin != 0:
+        xmin = xmin - pad
+
+    if ymin != 0:
+        ymin = ymin - pad
+
+    if xmax != image_shape_x:
+        xmax = xmax + pad
+
+    if ymax != image_shape_y:
+        ymax = ymax + pad
+
+    xmin = max(xmin, 0)
+    ymin = max(ymin, 0)
+    xmax = min(xmax, image_shape_x)
+    ymax = min(ymax, image_shape_y)
+
 
     os.makedirs(f"{heading}", exist_ok=True)
 
+    cropped_small = tiff_small[ymin:ymax, xmin:xmax]
+
     plt.imsave(f"{heading}/{box_id}.tiff", cropped_small, cmap='gray') 
-    print(f"added Box {box_id}")
+
     return cropped_small
 
 
@@ -329,7 +448,6 @@ def process_box(args):
     # removed saving blobs seperately as I just wanto save all radii and coordinates at the end     
 
     if len(blob) == 1:
-        print(f"Saved blob for box {box_id}")
         model_found = True
     elif len(blob) == 0:
         print(f"X No blobs detected in box {box_id}")
@@ -341,7 +459,7 @@ def process_box(args):
     radii = np.ravel(radii)
     return coordinates, radii, model_found
 
-def detect_blob_in_all_boxes(mask_boxes):
+def detect_blob_in_all_boxes(mask_boxes, selection_csv):
     '''
     Detects blobs in a list of image or mask boxes in parallel and collects their coordinates and radii.
 
@@ -359,11 +477,15 @@ def detect_blob_in_all_boxes(mask_boxes):
         - Preserves the original order of boxes in the returned lists.
         - Each box is expected to contain at most one detectable blob. Multiple or no blobs will trigger warning messages from `process_box()`.
     '''
+    # load manual selection 
+    selected_boxes_ids = load_allowed_ids(selection_csv)
+
     all_coordinates = []
     all_radii = []
     model_count = 0
 
-    box_args = [(i + 1, box) for i, box in enumerate(mask_boxes)]  # (box_id, box)
+    # only select boxes that are confirmed as pass
+    box_args = [(i + 1, box) for i, box in enumerate(mask_boxes) if (i + 1) in selected_boxes_ids] # (box_id, box)
 
     with ThreadPoolExecutor() as executor:
         results = executor.map(process_box, box_args)  # preserves order
@@ -374,14 +496,10 @@ def detect_blob_in_all_boxes(mask_boxes):
         if model_found:
             model_count = model_count + 1
 
-        return all_coordinates, all_radii, model_count
-
-def set_radius(all_radii, radius):
-    all_radii = [np.array([radius]) if r.size > 0 else r for r in all_radii]
-    return all_radii
+    return all_coordinates, all_radii, model_count
 
 
-def make_grid_and_split_all(markers, conditions, repeat_no, output_list=False):
+def grid_split(directory, markers, conditions, repeats, output_list=False):
     '''
     Assumes ALL cropped images are already made and only need to be reloaded 
     List of images (index according to marker where 1:DAPI, 2:SOX2, 3:BRA, 4:GATA3) KEEP THE SAME ALWAYS
@@ -395,27 +513,24 @@ def make_grid_and_split_all(markers, conditions, repeat_no, output_list=False):
     img_boxes_list = []
 
     for condition in conditions:
-        for repeat in repeat_no:
+        for repeat in repeats:
 
             # reload cropped images that are already made 
-            images, masks = reload_cropped(repeat, condition)
+            images, masks = load_image_and_mask(directory, repeat, condition, markers)
 
             for i, marker in enumerate(markers):
                 
                 # draw grid
                 grid_mask = draw_grid(images[i])
-                print(f"finished making grid for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
                 # make mask boxes per repeat and save 
                 print(f"------------------------Starting mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                mask_boxes = analyse_by_grid(masks[i], grid_mask, marker, condition, repeat, mask=True, rescale_switch = False)
-                print(len(mask_boxes), "should be 676")
+                mask_boxes = analyse_by_grid(directory, masks[i], grid_mask, marker, condition, repeat, mask=True, rescale_switch = False)
                 print(f"------------------------finished mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
                 # make image boxes per repeat and save
                 print(f"------------------------Starting image boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                img_boxes = analyse_by_grid(images[i], grid_mask, marker, condition, repeat, mask=False, rescale_switch = False)
-                print(len(img_boxes), "should be 676")
+                img_boxes = analyse_by_grid(directory, images[i], grid_mask, marker, condition, repeat, mask=False, rescale_switch = False)
                 print(f"------------------------finished image boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
 
                 mask_boxes_list.append(mask_boxes)
@@ -425,57 +540,84 @@ def make_grid_and_split_all(markers, conditions, repeat_no, output_list=False):
         return mask_boxes_list, img_boxes_list
 
 
-def detect_blob_all(markers, conditions, repeat_no):
-    blob_output_paths = []
+def select_gastruloids(directory, marker, markers, conditions, repeats):
 
-    for repeat in repeat_no:
+    for repeat in repeats:
+        for condition in conditions:
+            # getting directories
+            mask_boxes_path = f"{directory}/{repeat}/boxes_npz/mask_{marker}_{condition}.npz"
+            image_boxes_path = f"{directory}/{repeat}/boxes_npz/img_{marker}_{condition}.npz"
+
+            blobs_output_directory = f"{directory}/{repeat}/blobs_npz"
+            blobs_output_path = f"{blobs_output_directory}/{marker}_{condition}.npz"
+            os.makedirs(blobs_output_directory, exist_ok=True)
+            
+            # A. RELOAD: IMAGE, MASK BOXES 
+            print(f"------------------------Starting Load mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            mask_boxes = load_boxes(mask_boxes_path) 
+            print(f"------------------------Finished Load mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+
+            print(f"------------------------Starting Load images boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            img_boxes = load_boxes(image_boxes_path)
+            print(f"------------------------Finished Load images boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            
+            selection_output_dir = f"{directory}/{repeat}/selection"
+            os.makedirs(selection_output_dir, exist_ok=True)
+            selection_csv = f"{selection_output_dir}/img_DAPI_{condition}.csv"
+
+
+            # # B. MANUALLY REVIEW WHICH BOXES TO INCLUDE AND WHICH TO LEAVE OUT
+            print(f"------------------------Starting Manual Selection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            images_folder = f"{directory}/{repeat}/boxes_tiff/img_{marker}_{condition}"
+            manual_selection(images_folder, selection_csv)
+            print(f"------------------------Finished Manual Selection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+
+
+            # C. DETECT BLOB IN EACH MASK BOX AND SAVE
+            print(f"------------------------Starting Gastruloid detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+            all_coordinates, all_radii, model_count = detect_blob_in_all_boxes(mask_boxes, selection_csv)
+            print(f"Models detected: {model_count}/676")
+            print(f"------------------------Finished Gastruloid detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+
+
+            # save all outputs for easy visualization and further analysis
+            print(f"------------------------Saving Gastruloid detection outputs for repeat: {repeat}, condition: {condition}, marker: {marker} in {blobs_output_path}")
+            
+            np.savez(blobs_output_path,
+                    all_coordinates=np.array(all_coordinates, dtype=object),
+                    all_radii=np.array(all_radii, dtype=object))
+    
+    boxes_tiff_selected(directory, repeats, conditions, markers)
+
+def boxes_tiff_selected(directory, repeats, conditions, markers):
+    for repeat in repeats:
         for condition in conditions:
             for marker in markers:
-        
-                # getting directories
-                mask_boxes_path = f"boxes_npz/{repeat}/mask_{marker}_{condition}_NOrescale_boxes.npz"
-                image_boxes_path = f"boxes_npz/{repeat}/img_{marker}_{condition}_NOrescale_boxes.npz"
+                print(f"------------Repeat: {repeat}, Condition: {condition}, marker: {marker}")
 
-                blobs_output_directory = f"blobs_npz/{repeat}"
-                blobs_output_path = f"{blobs_output_directory}/{marker}_{condition}.npz"
-                os.makedirs(blobs_output_directory, exist_ok=True)
-                
-                # A. RELOAD: IMAGE, MASK BOXES 
-                print(f"------------------------Starting Load mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                mask_boxes = load_boxes(mask_boxes_path) 
-                print(f"------------------------Finished Load mask boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+                # output directory for images 
+                img_output_dir = f"{directory}/{repeat}/boxes_tiff_selected/img_{marker}_{condition}"
+                os.makedirs(img_output_dir, exist_ok=True)
 
-                print(f"------------------------Starting Load images boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                img_boxes = load_boxes(image_boxes_path)
-                print(f"------------------------Finished Load images boxes for repeat: {repeat}, condition: {condition}, marker: {marker}")
+                # get selected boxes
+                selected_boxes_ids = load_allowed_ids(f'{directory}/{repeat}/selection/img_DAPI_{condition}.csv')
+                selected_boxes_ids.sort()
+                selected_set = set(str(num) for num in selected_boxes_ids)
 
-    
-                # B. DETECT BLOB IN EACH MASK BOX AND SAVE
-                print(f"------------------------Starting Blob detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
-                all_coordinates, all_radii, model_count = detect_blob_in_all_boxes(mask_boxes)
-                print(f"Models detected: {model_count}/676")
-                print(f"------------------------Finished Blob detection for repeat: {repeat}, condition: {condition}, marker: {marker}")
+                boxes_tiffs_path = f"{directory}/{repeat}/boxes_tiff/img_{marker}_{condition}"  
 
+                # Get all files in the directory
+                all_files = os.listdir(boxes_tiffs_path)
 
-                # save all outputs for easy visualization and further analysis
-                print(f"------------------------Saving Blob detection outputs for repeat: {repeat}, condition: {condition}, marker: {marker} in {blobs_output_path}")
-                
-                print(f"------------------------{blobs_output_path} info:")
-                print("mask_boxes:", type(mask_boxes), len(mask_boxes), type(mask_boxes[0]))
-                print("img_boxes:",type(img_boxes), len(img_boxes), type(img_boxes[0]))
-                print("all_coordinates:",type(all_coordinates), len(all_coordinates), type(all_coordinates[0]))
-                print("all_radii:",type(all_radii), len(all_radii), type(all_radii[0]))
-                print(f"------------------------")
-                
-                np.savez(blobs_output_path,
-                        mask_boxes=np.array(mask_boxes, dtype=object),
-                        img_boxes=np.array(img_boxes, dtype=object),
-                        all_coordinates=np.array(all_coordinates, dtype=object),
-                        all_radii=np.array(all_radii, dtype=object))
+                # Sort files numerically by their base name
+                all_files.sort(key=lambda x: int(os.path.splitext(x)[0]))
 
-                blob_output_paths.append(blobs_output_path)
-
-    with open("blob_output_paths.txt", "a") as f:
-        for path in blob_output_paths:
-            f.write(path + "\n")
-    print("Finshed putting all blob output paths to blob_output_paths.txt")
+                counter = 1
+                for filename in all_files:
+                    name, ext = os.path.splitext(filename)
+                    if name in selected_set:
+                        counter_str = str(counter)
+                        src_path = os.path.join(boxes_tiffs_path, filename)
+                        dst_path = os.path.join(img_output_dir, f"{counter_str}.tiff")
+                        shutil.copy2(src_path, dst_path)
+                        counter += 1
